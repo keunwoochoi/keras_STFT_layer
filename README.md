@@ -18,3 +18,6 @@ model.add(your_awesome_network)
 ...
 
 ```
+
+## More info
+[a little bit messy notebook](https://github.com/keunwoochoi/keras_STFT_layer/blob/master/stft_kernels.ipynb)
