@@ -3,9 +3,10 @@ from __future__ import absolute_import
 
 from keras.layers.convolutional import Convolution1D
 from keras.models import Sequential
-from keras.layers import Input, Lambda, merge
+from keras.layers import Input, Lambda, merge, Permute, Reshape
 from keras.models import Model
 from keras import backend as K
+import scipy.signal
 # imports for backwards namespace compatibility
 import numpy as np
 import pdb
@@ -14,12 +15,10 @@ import time
 import librosa
 
 
-def get_kernels(n_dft, n_hop=None):
+def get_stft_kernels(n_dft, n_hop=None):
     assert n_dft > 1 and ((n_dft & (n_dft - 1)) == 0), \
-        ('n_dft should be >1 and power of 2, but n_dft == %d' % n_dft)
-    if n_hop is None:
-        n_hope = n_dft / 2
-
+        ('n_dft should be > 1 and power of 2, but n_dft == %d' % n_dft)
+    
     nb_filter = n_dft/2 + 1
     # prepare DFT filters
     timesteps = range(n_dft)
@@ -27,43 +26,40 @@ def get_kernels(n_dft, n_hop=None):
     dft_real_kernels = np.array([[np.cos(w_k*n) for n in timesteps] for w_k in w_ks])
     dft_imag_kernels = np.array([[np.sin(w_k*n) for n in timesteps] for w_k in w_ks])
 
+    # windowing DFT filters
+    dft_window = scipy.signal.hann(n_dft, sym=False)
+    dft_window = dft_window.reshape((1, -1))
+    dft_real_kernels = np.multiply(dft_real_kernels, dft_window)
+    dft_imag_kernels = np.multiply(dft_imag_kernels, dft_window)
+
+    # 
     dft_real_kernels = dft_real_kernels[:nb_filter]
     dft_imag_kernels = dft_imag_kernels[:nb_filter]    
-    # reshape filter e.g. (5, 8) --> (5, 1, 8, 1) (todo; is this theano convention?)
+    # reshape filter e.g. (5, 8) --> (5, 1, 8, 1) (TODO; is this theano convention?)
+    #                      8:len_win, 5:n_freq
     dft_real_kernels = dft_real_kernels[:, np.newaxis, :, np.newaxis]
     dft_imag_kernels = dft_imag_kernels[:, np.newaxis, :, np.newaxis]    
     return dft_real_kernels, dft_imag_kernels
 
 
-def logam(x):
-    # using librosa default values.
-    # in many cases, they should be batch-normalized per frequency band anyway.
-    # also the implementation is ported from 
-
-    ref_power = 1.0
-    amin = 1e-10
-    top_db = 80.0
-
-    max_db = 10.0 * K.log(K.max(x))/np.log(10)
-
-    log_spec = 10.0 * K.log(K.maximum(x, amin))/np.log(10)
-    log_spec = log_spec - max_db
-    return log_spec
+def Logam_layer():
+    def logam(x):
+        log_spec = 10*K.log(K.maximum(x, 1e-10))/K.log(10)
+        log_spec = log_spec - K.max(log_spec) # [-?, 0]
+        log_spec = K.maximum(log_spec, -80.0) # [-80, 0]
+        return log_spec
+    return Lambda(lambda x: logam(x))
 
 
-def Spectrogram(n_dft, n_hop=None,  border_mode='same', input_shape=None,
-                logamplitude=True):
-    ''' Spectrogram using STFT - using two conv1d layers
-
-    n_dft : length of DFT
-    n_hop : hop length of STFT
-    input_shape : input_shape, same as keras layers
-    amplitude : 'linear': no pre-processing,
-                'decibel': 
-
+def get_spectrogram_tensors(n_dft, input_shape, n_hop=None, border_mode='same', 
+                logamplitude=True, n_win=None):
+    ''' returns x, STFT_magnitude (#freq, #time shape)
     '''
+    if n_hop is None:
+        n_hop = n_dft / 2
+
     # get DFT kernels  
-    dft_real_kernels, dft_imag_kernels = get_kernels(n_dft, n_hop)
+    dft_real_kernels, dft_imag_kernels = get_stft_kernels(n_dft, n_hop)
     nb_filter = n_dft/2 + 1
 
     # layers - one for the real, one for the imaginary
@@ -92,14 +88,41 @@ def Spectrogram(n_dft, n_hop=None,  border_mode='same', input_shape=None,
     STFT_imag = Lambda(lambda x: x ** 2)(STFT_imag)
 
     STFT_magnitude = merge([STFT_real, STFT_imag], mode='sum') # magnitude
-    
+
+    # log(amplitude**2)
     if logamplitude:
         # STFT_magnitude = Lambda(lambda x: np.maximum(x, ))(STFT_magnitude)
-        STFT_log = Lambda(lambda x: 10*np.log10(x + 1e-10))(STFT_magnitude)
-        return Model(input=x, output=STFT_log)
-       
-    else:
-        return Model(input=x, output=STFT_magnitude)
+        STFT_magnitude = Logam_layer()(STFT_magnitude)
+    
+    # TODO.
+    # if K.image_dim_ordering() == 'th':
+    #     STFT_magnitude = K.expand_dims(STFT_magnitude, dim=1)
+    # else:
+    #     STFT_magnitude() = K.expand_dims(STFT_magnitude, dim=3)
+    
+    STFT_magnitude = Permute((2, 1))(STFT_magnitude) # output: (#sample, freq, time)
+
+    return x, STFT_magnitude
+
+
+def Spectrogram(n_dft,  input_shape, n_hop=None, border_mode='same',
+                logamplitude=True, n_win=None):
+    ''' Spectrogram using STFT - using two conv1d layers
+
+    n_dft : length of DFT
+    n_hop : hop length of STFT
+    input_shape : input_shape, same as keras layers
+    amplitude : 'linear': no pre-processing,
+                'decibel': 
+
+    '''
+    x, STFT_magnitude = get_spectrogram_tensors(n_dft, input_shape=input_shape,
+                                                n_hop=n_hop, 
+                                                border_mode=border_mode,
+                                                logamplitude=logamplitude, 
+                                                n_win=n_win)
+
+    return Model(input=x, output=STFT_magnitude)
 
 
 if __name__ == '__main__':
@@ -119,12 +142,6 @@ if __name__ == '__main__':
     start = time.time()
     outputs = specgram.predict(srcs)
     print "Prediction is done. It took %5.3f seconds." % (time.time()-start)
-    np.save('outputs.npy', outputs)
-
-
-
-
-
-
+    np.save('stft_outputs.npy', outputs)
 
 
