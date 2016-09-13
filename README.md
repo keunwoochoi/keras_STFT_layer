@@ -23,5 +23,5 @@ model.add(your_awesome_network)
 ```
 
 ## More info
-[See the results - STFT](https://github.com/keunwoochoi/keras_STFT_layer/blob/master/stft.ipynb)
-[See the results - Melgram](https://github.com/keunwoochoi/keras_STFT_layer/blob/master/melgram.ipynb)
+* [See the results - STFT](https://github.com/keunwoochoi/keras_STFT_layer/blob/master/stft.ipynb)
+* [See the results - Melgram](https://github.com/keunwoochoi/keras_STFT_layer/blob/master/melgram.ipynb)
