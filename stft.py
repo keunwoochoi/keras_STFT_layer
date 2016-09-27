@@ -1,25 +1,40 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
-
+import numpy as np
+import scipy.signal
 from keras.layers.convolutional import Convolution1D
-from keras.models import Sequential
 from keras.layers import Input, Lambda, merge, Permute, Reshape
 from keras.models import Model
 from keras import backend as K
-import scipy.signal
-# imports for backwards namespace compatibility
-import numpy as np
-import pdb
-import time
-
-import librosa
 
 
-def get_stft_kernels(n_dft, n_hop=None):
+def _get_stft_kernels(n_dft, keras_ver='new'):
+    '''Return dft kernels for real/imagnary parts assuming
+        the input signal is real.
+    An asymmetric hann window is used (scipy.signal.hann).
+
+    Parameters
+    ----------
+    n_dft : int > 0 and power of 2 [scalar]
+        number of dft components.
+
+    keras_ver : string, 'new' or 'old'
+        It determines the reshaping strategy.
+
+    Returns
+    -------
+    dft_real_kernels : np.ndarray [shape=(nb_filter, 1, 1, n_win)]
+    dft_imag_kernels : np.ndarray [shape=(nb_filter, 1, 1, n_win)]
+
+    * nb_filter = n_dft/2 + 1
+    * n_win = n_dft
+    
+    '''
     assert n_dft > 1 and ((n_dft & (n_dft - 1)) == 0), \
         ('n_dft should be > 1 and power of 2, but n_dft == %d' % n_dft)
     
     nb_filter = n_dft/2 + 1
+    
     # prepare DFT filters
     timesteps = range(n_dft)
     w_ks = [2*np.pi*k/float(n_dft) for k in xrange(n_dft)]
@@ -31,35 +46,96 @@ def get_stft_kernels(n_dft, n_hop=None):
     dft_window = dft_window.reshape((1, -1))
     dft_real_kernels = np.multiply(dft_real_kernels, dft_window)
     dft_imag_kernels = np.multiply(dft_imag_kernels, dft_window)
+    
+    if keras_ver == 'old':  # 1.0.6: reshape filter e.g. (5, 8) --> (5, 1, 8, 1)
+        dft_real_kernels = dft_real_kernels[:nb_filter]
+        dft_imag_kernels = dft_imag_kernels[:nb_filter]
+        dft_real_kernels = dft_real_kernels[:, np.newaxis, :, np.newaxis]
+        dft_imag_kernels = dft_imag_kernels[:, np.newaxis, :, np.newaxis]
+    else:
+        dft_real_kernels = dft_real_kernels[:nb_filter].transpose()
+        dft_imag_kernels = dft_imag_kernels[:nb_filter].transpose()
+        dft_real_kernels = dft_real_kernels[:, np.newaxis, np.newaxis, :]
+        dft_imag_kernels = dft_imag_kernels[:, np.newaxis, np.newaxis, :]
 
-    # 
-    dft_real_kernels = dft_real_kernels[:nb_filter]
-    dft_imag_kernels = dft_imag_kernels[:nb_filter]    
-    # reshape filter e.g. (5, 8) --> (5, 1, 8, 1) (TODO; is this theano convention?)
-    #                      8:len_win, 5:n_freq
-    dft_real_kernels = dft_real_kernels[:, np.newaxis, :, np.newaxis]
-    dft_imag_kernels = dft_imag_kernels[:, np.newaxis, :, np.newaxis]    
     return dft_real_kernels, dft_imag_kernels
 
 
-def Logam_layer():
+def Logam_layer(name='log_amplitude'):
+    '''Return a keras layer for log-amplitude.
+    The computation is simplified from librosa.logamplitude by
+        not having parameters such as ref_power, amin, tob_db.
+
+    Parameters
+    ----------
+    name : string
+        Name of the logamplitude layer
+
+    Returns
+    -------
+    a layer : Keras's Lambda layer for log-amplitude-ing.
+    '''
     def logam(x):
         log_spec = 10*K.log(K.maximum(x, 1e-10))/K.log(10)
-        log_spec = log_spec - K.max(log_spec) # [-?, 0]
-        log_spec = K.maximum(log_spec, -80.0) # [-80, 0]
+        log_spec = log_spec - K.max(log_spec)  # [-?, 0]
+        log_spec = K.maximum(log_spec, -80.0)  # [-80, 0]
         return log_spec
-    return Lambda(lambda x: logam(x))
+    return Lambda(lambda x: logam(x), name=name)
 
 
-def get_spectrogram_tensors(n_dft, input_shape, n_hop=None, border_mode='same', 
-                logamplitude=True, n_win=None):
-    ''' returns x, STFT_magnitude (#freq, #time shape)
+def get_spectrogram_tensors(n_dft, input_shape, trainable=False, 
+                            n_hop=None, border_mode='same', 
+                            logamplitude=True):
+    '''Returns two tensors, x as input, stft_magnitude as result.
+        x(input) and STFT_magnitude(tensor) (#freq, #time shape)
+    These tensors can be use to build a Keras model 
+        using Functional API, 
+        `e.g., model = keras.models.Model(x, STFT_magnitude)`
+        to build a model that does STFT.
+    It uses two `Convolution1D` to compute real/imaginary parts of
+        STFT and sum(real**2, imag**2). 
+
+    Parameters
+    ----------
+    n_dft : int > 0 and power of 2 [scalar]
+        number of dft components.
+
+    input_shape : tuple (length=2),
+        Input shape of raw audio input.
+        It should (num_audio_samples, 1), e.g. (441000, 1)
+
+    trainable : boolean
+        If it is `True`, the STFT kernels (=weights of two 1d conv layer)
+        is set as `trainable`, therefore they are initiated with STFT 
+        kernels but then updated. 
+
+    n_hop : int > 0 [scalar]
+        number of samples between successive frames.
+    
+    border_mode : 'valid' or 'same'.
+        if 'valid' the edges of input signal are ignored.
+
+    logamplitude : boolean
+        whether logamplitude to stft or not
+
+
+    this is then used in Keras - Functional model API
+    STFT_real and STFT_imag is set as non_trainable
+
+    Returns
+    -------
+    x : input tensor
+
+    STFT_magnitude : STFT magnitude [shape=(None, n_freq, n_frame)]
     '''
+
+    assert trainable in (True, False)
+
     if n_hop is None:
         n_hop = n_dft / 2
 
     # get DFT kernels  
-    dft_real_kernels, dft_imag_kernels = get_stft_kernels(n_dft, n_hop)
+    dft_real_kernels, dft_imag_kernels = _get_stft_kernels(n_dft)
     nb_filter = n_dft/2 + 1
 
     # layers - one for the real, one for the imaginary
@@ -81,67 +157,59 @@ def get_spectrogram_tensors(n_dft, input_shape, n_hop=None, border_mode='same',
                               name='dft_imag',
                               input_shape=input_shape)(x)
     
-    STFT_real.trainable = False
-    STFT_imag.trainable = False
+    STFT_real.trainable = trainable
+    STFT_imag.trainable = trainable
+    
+    STFT_real = Lambda(lambda x: x ** 2, name='real_pow')(STFT_real)
+    STFT_imag = Lambda(lambda x: x ** 2, name='imag_pow')(STFT_imag)
 
-    STFT_real = Lambda(lambda x: x ** 2)(STFT_real)
-    STFT_imag = Lambda(lambda x: x ** 2)(STFT_imag)
+    STFT_magnitude = merge([STFT_real, STFT_imag], mode='sum', name='sum')
 
-    STFT_magnitude = merge([STFT_real, STFT_imag], mode='sum') # magnitude
-
-    # log(amplitude**2)
     if logamplitude:
-        # STFT_magnitude = Lambda(lambda x: np.maximum(x, ))(STFT_magnitude)
         STFT_magnitude = Logam_layer()(STFT_magnitude)
     
-    # TODO.
-    # if K.image_dim_ordering() == 'th':
-    #     STFT_magnitude = K.expand_dims(STFT_magnitude, dim=1)
-    # else:
-    #     STFT_magnitude() = K.expand_dims(STFT_magnitude, dim=3)
-    
-    STFT_magnitude = Permute((2, 1))(STFT_magnitude) # output: (#sample, freq, time)
+    # output: (#sample, freq, time)
+    STFT_magnitude = Permute((2, 1))(STFT_magnitude) 
 
     return x, STFT_magnitude
 
 
-def Spectrogram(n_dft,  input_shape, n_hop=None, border_mode='same',
-                logamplitude=True, n_win=None):
-    ''' Spectrogram using STFT - using two conv1d layers
+def Spectrogram(n_dft, input_shape, trainable=False, n_hop=None, 
+                border_mode='same', logamplitude=True):
+    '''A keras model for Spectrogram using STFT
 
-    n_dft : length of DFT
-    n_hop : hop length of STFT
-    input_shape : input_shape, same as keras layers
-    amplitude : 'linear': no pre-processing,
-                'decibel': 
+    Parameters
+    ----------
+    n_dft : int > 0 and power of 2 [scalar]
+        number of dft components.
+
+    input_shape : tuple (length=2),
+        Input shape of raw audio input.
+        It should (num_audio_samples, 1), e.g. (441000, 1)
+
+    trainable : boolean
+        If it is `True`, the STFT kernels (=weights of two 1d conv layer)
+        is set as `trainable`, therefore they are initiated with STFT 
+        kernels but then updated. 
+
+    n_hop : int > 0 [scalar]
+        number of audio samples between successive frames.
+    
+    border_mode : 'valid' or 'same'.
+        if 'valid' the edges of input signal are ignored.
+
+    logamplitude : boolean
+        whether logamplitude to stft or not
+
+    Returns
+    -------
+    A keras model that has output shape of (None, n_freq, n_frame)
 
     '''
     x, STFT_magnitude = get_spectrogram_tensors(n_dft, input_shape=input_shape,
+                                                trainable=trainable,
                                                 n_hop=n_hop, 
                                                 border_mode=border_mode,
-                                                logamplitude=logamplitude, 
-                                                n_win=n_win)
+                                                logamplitude=logamplitude)
 
     return Model(input=x, output=STFT_magnitude)
-
-
-if __name__ == '__main__':
-
-    len_src = 12000*8
-    specgram = Spectrogram(n_dft=512, n_hop=128, input_shape=(len_src, 1))
-    
-    src, sr = librosa.load('src/bensound-cute.mp3', sr=12000, duration=8.0)  # whole signal    
-    src = src[:len_src]
-    src = src[:, np.newaxis]
-    srcs = np.zeros((16, len_src, 1))
-
-    for ind in range(srcs.shape[0]):
-        srcs[ind] = src
-
-    print srcs.shape
-    start = time.time()
-    outputs = specgram.predict(srcs)
-    print "Prediction is done. It took %5.3f seconds." % (time.time()-start)
-    np.save('stft_outputs.npy', outputs)
-
-
