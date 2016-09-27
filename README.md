@@ -1,5 +1,8 @@
 # keras_STFT_layer
-Do STFT in Keras! For less hassle pre-processing
+Do STFT & friends in Keras! For less hassle pre-processing
+ * [x] STFT
+ * [x] melgram
+ * [ ] CQT
 
 ## why
 Because I am planning to compare the performance of some Convnets while changing parameters of STFT and storing all of them doesn't seem to make sense.
@@ -20,4 +23,5 @@ model.add(your_awesome_network)
 ```
 
 ## More info
-[a little bit messy notebook](https://github.com/keunwoochoi/keras_STFT_layer/blob/master/stft_kernels.ipynb)
+* [See the results - STFT](https://github.com/keunwoochoi/keras_STFT_layer/blob/master/stft.ipynb)
+* [See the results - Melgram](https://github.com/keunwoochoi/keras_STFT_layer/blob/master/melgram.ipynb)
