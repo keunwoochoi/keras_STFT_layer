@@ -121,7 +121,7 @@ def _mel(sr, n_dft, n_mels=128, fmin=0.0, fmax=None):
 
 def Melspectrogram(n_dft, input_shape, trainable, n_hop=None, 
                    border_mode='same', logamplitude=True, sr=22050, 
-                   n_mels=128, fmin=0.0, fmax=None):
+                   n_mels=128, fmin=0.0, fmax=None, name='melgram'):
     '''Return a Mel-spectrogram keras layer
 
     Parameters
@@ -159,6 +159,9 @@ def Melspectrogram(n_dft, input_shape, trainable, n_hop=None,
     fmax : float > fmin [scalar]
         maximum frequency of mel-filterbanks
 
+    name : string
+        name of the model
+
     Returns
     -------
     A Keras model that compute mel-spectrogram.
@@ -192,7 +195,13 @@ def Melspectrogram(n_dft, input_shape, trainable, n_hop=None,
     mel_basis = np.fliplr(mel_basis) # to make it from low-f to high-freq
     n_freq = mel_basis.shape[1]
 
-    mel_basis = mel_basis[:, np.newaxis, :, np.newaxis] # TODO: check if it's a theano convention?
+    if K.image_dim_ordering() == 'th':
+        mel_basis = mel_basis[:, np.newaxis, :, np.newaxis] # TODO: check if it's a theano convention?
+        print 'th', mel_basis.shape
+    else:
+        mel_basis = np.transpose(mel_basis, (1, 0))
+        mel_basis = mel_basis[:, np.newaxis, np.newaxis, :] # TODO: check if it's a theano convention?
+        print 'tf', mel_basis.shape
     
     stft2mel = Convolution2D(n_mels, n_freq, 1, border_mode='valid', bias=False,
                             name='stft2mel', weights=[mel_basis])

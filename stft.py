@@ -80,7 +80,14 @@ def Logam_layer(name='log_amplitude'):
         log_spec = log_spec - K.max(log_spec)  # [-?, 0]
         log_spec = K.maximum(log_spec, -80.0)  # [-80, 0]
         return log_spec
-    return Lambda(lambda x: logam(x), name=name)
+
+    def logam_shape(shapes):
+        '''shapes: shape of input(s) of the layer'''
+        print 'output shape of logam:', shapes
+        return shapes
+
+    return Lambda(lambda x: logam(x), name=name,
+        output_shape=logam_shape)
 
 
 def get_spectrogram_tensors(n_dft, input_shape, trainable=False, 
