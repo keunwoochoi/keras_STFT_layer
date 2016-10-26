@@ -83,7 +83,7 @@ def Logam_layer(name='log_amplitude'):
 
     def logam_shape(shapes):
         '''shapes: shape of input(s) of the layer'''
-        print 'output shape of logam:', shapes
+        # print('output shape of logam:', shapes)
         return shapes
 
     return Lambda(lambda x: logam(x), name=name,
