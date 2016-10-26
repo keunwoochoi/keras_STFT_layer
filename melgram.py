@@ -133,14 +133,14 @@ def Melspectrogram(n_dft, input_shape, trainable, n_hop=None,
         Input shape of raw audio input.
         It should (num_audio_samples, 1), e.g. (441000, 1)
 
-    n_hop : int > 0 [scalar]
-        number of audio samples between successive frames.
-    
     trainable : boolean
         If it is `True`, the STFT kernels (=weights of two 1d conv layer)
         AND hz->mel filter banks are set as `trainable`, 
         therefore they are updated. 
     
+    n_hop : int > 0 [scalar]
+        number of audio samples between successive frames.
+        
     border_mode : 'valid' or 'same'.
         if 'valid' the edges of input signal are ignored.
 
@@ -196,12 +196,12 @@ def Melspectrogram(n_dft, input_shape, trainable, n_hop=None,
     n_freq = mel_basis.shape[1]
 
     if K.image_dim_ordering() == 'th':
-        mel_basis = mel_basis[:, np.newaxis, :, np.newaxis] # TODO: check if it's a theano convention?
-        print 'th', mel_basis.shape
+        mel_basis = mel_basis[:, np.newaxis, :, np.newaxis] 
+        # print('th', mel_basis.shape)
     else:
         mel_basis = np.transpose(mel_basis, (1, 0))
-        mel_basis = mel_basis[:, np.newaxis, np.newaxis, :] # TODO: check if it's a theano convention?
-        print 'tf', mel_basis.shape
+        mel_basis = mel_basis[:, np.newaxis, np.newaxis, :] 
+        # print('tf', mel_basis.shape)
     
     stft2mel = Convolution2D(n_mels, n_freq, 1, border_mode='valid', bias=False,
                             name='stft2mel', weights=[mel_basis])
@@ -241,26 +241,18 @@ def Melspectrogram_functional(n_dft, input_shape, n_hop=None, border_mode='same'
 
     # build a Mel filter
     mel_basis = _mel(sr, n_dft, n_mels, fmin, fmax) # (128, 1025) (mel_bin, n_freq)
-    # mel_basis = np.fliplr(mel_basis) # to make it from low-f to high-freq
     mel_basis = mel_basis[np.newaxis, :]
-    print 'mel_basis shape: ', mel_basis.shape # e.g. 1, 96, 513
+    # print('mel_basis shape: ', mel_basis.shape) # e.g. 1, 96, 513
 
     mel_basis_tensor = K.variable(mel_basis)
 
-    melgram = Lambda(lambda x: K.batch_dot(mel_basis_tensor, x, axes=(2, 1)), name='stft2mel')(STFT_magnitude)
+    melgram = Lambda(lambda x: K.batch_dot(mel_basis_tensor, x, axes=(2, 1)), 
+                     name='stft2mel')(STFT_magnitude)
     
     if logamplitude:
         melgram = Logam_layer()(melgram)
 
-    # if K.image_dim_ordering() == 'th':
-    #     melgram = Reshape((1, n_mels, n_time), name='reshape_to_2d')(melgram) # (None, 1, freq, time)
-    # else:
-    #     melgram = Reshape((n_mels, n_time, 1), name='reshape_to_2d')(melgram) # (None, freq, time, 1)
-    # batch_dot shape inferring is weird
-
     Melgram_model = Model(input=x, output=melgram)
     Melgram_model.summary(line_length=80)
     return Melgram_model
-
-
 
