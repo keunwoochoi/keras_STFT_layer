@@ -218,5 +218,6 @@ def Spectrogram(n_dft, input_shape, trainable=False, n_hop=None,
                                                 n_hop=n_hop, 
                                                 border_mode=border_mode,
                                                 logamplitude=logamplitude)
-
-    return Model(input=x, output=STFT_magnitude)
+    model = Model(input=x, output=STFT_magnitude)
+    model.trainable = trainable
+    return model
