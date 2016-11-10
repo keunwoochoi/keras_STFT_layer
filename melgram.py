@@ -180,6 +180,7 @@ def Melspectrogram(n_dft, input_shape, trainable, n_hop=None,
                                                 logamplitude=False) 
     # output: (None, freq, time)
     stft_model = Model(input=x, output=STFT_magnitude, name='stft') 
+    stft_model = trainable
     Melgram.add(stft_model)
 
     # Convert to a proper 2D representation (ndim=4)
