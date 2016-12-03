@@ -28,26 +28,28 @@ def _get_stft_kernels(n_dft, keras_ver='new'):
 
     * nb_filter = n_dft/2 + 1
     * n_win = n_dft
-    
+
     '''
     assert n_dft > 1 and ((n_dft & (n_dft - 1)) == 0), \
         ('n_dft should be > 1 and power of 2, but n_dft == %d' % n_dft)
-    
-    nb_filter = n_dft/2 + 1
-    
+
+    nb_filter = n_dft / 2 + 1
+
     # prepare DFT filters
     timesteps = range(n_dft)
-    w_ks = [2*np.pi*k/float(n_dft) for k in xrange(n_dft)]
-    dft_real_kernels = np.array([[np.cos(w_k*n) for n in timesteps] for w_k in w_ks])
-    dft_imag_kernels = np.array([[np.sin(w_k*n) for n in timesteps] for w_k in w_ks])
+    w_ks = [(2 * np.pi * k) / float(n_dft) for k in xrange(n_dft)]
+    dft_real_kernels = np.array([[np.cos(w_k * n) for n in timesteps]
+                                  for w_k in w_ks])
+    dft_imag_kernels = np.array([[np.sin(w_k * n) for n in timesteps]
+                                  for w_k in w_ks])
 
     # windowing DFT filters
     dft_window = scipy.signal.hann(n_dft, sym=False)
     dft_window = dft_window.reshape((1, -1))
     dft_real_kernels = np.multiply(dft_real_kernels, dft_window)
     dft_imag_kernels = np.multiply(dft_imag_kernels, dft_window)
-    
-    if keras_ver == 'old':  # 1.0.6: reshape filter e.g. (5, 8) --> (5, 1, 8, 1)
+
+    if keras_ver == 'old':  # 1.0.6: reshape filter e.g. (5, 8) -> (5, 1, 8, 1)
         dft_real_kernels = dft_real_kernels[:nb_filter]
         dft_imag_kernels = dft_imag_kernels[:nb_filter]
         dft_real_kernels = dft_real_kernels[:, np.newaxis, :, np.newaxis]
@@ -73,10 +75,10 @@ def Logam_layer(name='log_amplitude'):
 
     Returns
     -------
-    a layer : Keras's Lambda layer for log-amplitude-ing.
+    a Keras layer : Keras's Lambda layer for log-amplitude-ing.
     '''
     def logam(x):
-        log_spec = 10*K.log(K.maximum(x, 1e-10))/K.log(10)
+        log_spec = 10 * K.log(K.maximum(x, 1e-10))/K.log(10)
         log_spec = log_spec - K.max(log_spec)  # [-?, 0]
         log_spec = K.maximum(log_spec, -80.0)  # [-80, 0]
         return log_spec
@@ -143,7 +145,7 @@ def get_spectrogram_tensors(n_dft, input_shape, trainable=False,
 
     # get DFT kernels  
     dft_real_kernels, dft_imag_kernels = _get_stft_kernels(n_dft)
-    nb_filter = n_dft/2 + 1
+    nb_filter = n_dft / 2 + 1
 
     # layers - one for the real, one for the imaginary
     x = Input(shape=input_shape, name='audio_input', dtype='float32')

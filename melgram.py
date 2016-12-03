@@ -28,12 +28,13 @@ def _mel_frequencies(n_mels=128, fmin=0.0, fmax=11025.0):
         freqs = f_min + f_sp * mels
 
         # And now the nonlfinear scale
-        min_log_hz = 1000.0                         # beginning of log region (Hz)
+        min_log_hz = 1000.0                         # beginning of log region
         min_log_mel = (min_log_hz - f_min) / f_sp   # same (Mels)
         logstep = np.log(6.4) / 27.0                # step size for log region
         log_t = (mels >= min_log_mel)
 
-        freqs[log_t] = min_log_hz * np.exp(logstep * (mels[log_t] - min_log_mel))
+        freqs[log_t] = min_log_hz \
+                       * np.exp(logstep * (mels[log_t] - min_log_mel))
 
         return freqs
 
@@ -50,13 +51,13 @@ def _mel_frequencies(n_mels=128, fmin=0.0, fmax=11025.0):
         mels = (frequencies - f_min) / f_sp
 
         # Fill in the log-scale part
-
-        min_log_hz = 1000.0                         # beginning of log region (Hz)
+        min_log_hz = 1000.0                         # beginning of log region
         min_log_mel = (min_log_hz - f_min) / f_sp   # same (Mels)
         logstep = np.log(6.4) / 27.0                # step size for log region
 
         log_t = (frequencies >= min_log_hz)
-        mels[log_t] = min_log_mel + np.log(frequencies[log_t]/min_log_hz) / logstep
+        mels[log_t] = min_log_mel \
+                      + np.log(frequencies[log_t] / min_log_hz) / logstep
 
         return mels
 
@@ -103,15 +104,15 @@ def _mel(sr, n_dft, n_mels=128, fmin=0.0, fmax=None):
 
     # centre freqs of mel bands
     freqs = _mel_frequencies(n_mels + 2,
-                            fmin=fmin,
-                            fmax=fmax)
+                             fmin=fmin,
+                             fmax=fmax)
     # Slaney-style mel is scaled to be approx constant energy per channel
     enorm = 2.0 / (freqs[2:n_mels+2] - freqs[:n_mels])
 
     for i in range(n_mels):
         # lower and upper slopes qfor all bins
-        lower = (dftfreqs - freqs[i]) / (freqs[i+1] - freqs[i])
-        upper = (freqs[i+2] - dftfreqs) / (freqs[i+2] - freqs[i+1])
+        lower = (dftfreqs - freqs[i]) / (freqs[i + 1] - freqs[i])
+        upper = (freqs[i + 2] - dftfreqs) / (freqs[i + 2] - freqs[i + 1])
 
         # .. then intersect them with each other and zero
         weights[i] = np.maximum(0, np.minimum(lower, upper)) * enorm[i]
@@ -185,15 +186,15 @@ def Melspectrogram(n_dft, input_shape, trainable, n_hop=None,
 
     # Convert to a proper 2D representation (ndim=4)
     if K.image_dim_ordering() == 'th':
-        Melgram.add(Reshape((1,) + stft_model.output_shape[1:],
-                            name='reshape_to_2d')) # (None, 1, freq, time)
+        Melgram.add(Reshape((1, ) + stft_model.output_shape[1:],
+                            name='reshape_to_2d'))  # (None, 1, freq, time)
     else:
-        Melgram.add(Reshape(stft_model.output_shape[1:] + (1,),
-                            name='reshape_to_2d')) # (None, freq, time, 1)
+        Melgram.add(Reshape(stft_model.output_shape[1:] + (1, ),
+                            name='reshape_to_2d'))  # (None, freq, time, 1)
 
     # build a Mel filter
-    mel_basis = _mel(sr, n_dft, n_mels, fmin, fmax) # (128, 1025) (mel_bin, n_freq)
-    mel_basis = np.fliplr(mel_basis) # to make it from low-f to high-freq
+    mel_basis = _mel(sr, n_dft, n_mels, fmin, fmax)  # (128, 1025) (mel_bin, n_freq)
+    mel_basis = np.fliplr(mel_basis)  # to make it from low-f to high-freq
     n_freq = mel_basis.shape[1]
 
     if K.image_dim_ordering() == 'th':
@@ -208,7 +209,7 @@ def Melspectrogram(n_dft, input_shape, trainable, n_hop=None,
                             name='stft2mel', weights=[mel_basis])
     stft2mel.trainable = trainable
 
-    Melgram.add(stft2mel) #output: (None, 128, 1, 375) if theano.
+    Melgram.add(stft2mel)  # output: (None, 128, 1, 375) if theano.
     if logamplitude:
         Melgram.add(Logam_layer())
     # i.e. 128ch == 128 mel-bin, for 375 time-step, therefore,
@@ -241,9 +242,9 @@ def Melspectrogram_functional(n_dft, input_shape, n_hop=None, border_mode='same'
     n_time = stft_model.output_shape[2]
 
     # build a Mel filter
-    mel_basis = _mel(sr, n_dft, n_mels, fmin, fmax) # (128, 1025) (mel_bin, n_freq)
+    mel_basis = _mel(sr, n_dft, n_mels, fmin, fmax)  # (128, 1025) (mel_bin, n_freq)
     mel_basis = mel_basis[np.newaxis, :]
-    # print('mel_basis shape: ', mel_basis.shape) # e.g. 1, 96, 513
+    # print('mel_basis shape: ', mel_basis.shape)  # e.g. 1, 96, 513
 
     mel_basis_tensor = K.variable(mel_basis)
 

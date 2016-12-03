@@ -4,7 +4,7 @@ import numpy as np
 import librosa
 
 
-len_src = 12000*8
+len_src = 12000 * 8
 melgram = melgram.Melspectrogram(n_dft=512,
                                  input_shape=(len_src, 1), 
                                  trainable=False,
