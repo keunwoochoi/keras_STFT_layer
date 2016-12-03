@@ -7,8 +7,9 @@ from keras.models import Model
 from keras import backend as K
 import numpy as np
 
-from stft import Spectrogram, get_spectrogram_tensors
+from stft import Spectrogram, get_spectrogram_model
 from stft import Logam_layer
+import pdb
 
 
 def _mel_frequencies(n_mels=128, fmin=0.0, fmax=11025.0):
@@ -174,23 +175,15 @@ def Melspectrogram(n_dft, input_shape, trainable, n_hop=None,
 
     Melgram = Sequential()
     # Prepare STFT.
-    x, STFT_magnitude = get_spectrogram_tensors(n_dft, 
-                                                n_hop=n_hop, 
-                                                border_mode=border_mode, 
-                                                input_shape=input_shape,
-                                                logamplitude=False) 
-    # output: (None, freq, time)
-    stft_model = Model(input=x, output=STFT_magnitude, name='stft') 
-    stft_model = trainable
+    stft_model = get_spectrogram_model(n_dft, 
+                                        n_hop=n_hop, 
+                                        border_mode=border_mode, 
+                                        input_shape=input_shape,
+                                        logamplitude=False) 
+    # output: 2d shape, either (None, 1, freq, time) or..
+    stft_model.trainable = trainable
     Melgram.add(stft_model)
-
-    # Convert to a proper 2D representation (ndim=4)
-    if K.image_dim_ordering() == 'th':
-        Melgram.add(Reshape((1, ) + stft_model.output_shape[1:],
-                            name='reshape_to_2d'))  # (None, 1, freq, time)
-    else:
-        Melgram.add(Reshape(stft_model.output_shape[1:] + (1, ),
-                            name='reshape_to_2d'))  # (None, freq, time, 1)
+    pdb.set_trace()
 
     # build a Mel filter
     mel_basis = _mel(sr, n_dft, n_mels, fmin, fmax)  # (128, 1025) (mel_bin, n_freq)
@@ -216,45 +209,7 @@ def Melspectrogram(n_dft, input_shape, trainable, n_hop=None,
     if K.image_dim_ordering() == 'th':
         Melgram.add(Permute((2, 1, 3), name='ch_freq_time'))
     else:
-        Melgram.add(Permute((1, 3, 2), name='ch_freq_time'))
+        Melgram.add(Permute((3, 2, 1), name='ch_freq_time'))
     # output dot product of them
     return Melgram
-
-
-def Melspectrogram_functional(n_dft, input_shape, n_hop=None, border_mode='same', 
-                   logamplitude=True, sr=22050, n_mels=128, fmin=0.0, fmax=None):
-    ''' Mel-spectrogram keras layer
-    sr: sampling rate (used to compute mel-frequency filter banks)
-    '''
-    if input_shape is None:
-        raise RuntimeError('specify input shape')
-
-    n_freq = n_dft/2 + 1
-
-    # Prepare STFT.
-    x, STFT_magnitude = get_spectrogram_tensors(n_dft, 
-                                                n_hop=n_hop, 
-                                                border_mode=border_mode, 
-                                                input_shape=input_shape,
-                                                logamplitude=False) 
-    # output: (None, freq, time)
-    stft_model = Model(input=x, output=STFT_magnitude)
-    n_time = stft_model.output_shape[2]
-
-    # build a Mel filter
-    mel_basis = _mel(sr, n_dft, n_mels, fmin, fmax)  # (128, 1025) (mel_bin, n_freq)
-    mel_basis = mel_basis[np.newaxis, :]
-    # print('mel_basis shape: ', mel_basis.shape)  # e.g. 1, 96, 513
-
-    mel_basis_tensor = K.variable(mel_basis)
-
-    melgram = Lambda(lambda x: K.batch_dot(mel_basis_tensor, x, axes=(2, 1)), 
-                     name='stft2mel')(STFT_magnitude)
-    
-    if logamplitude:
-        melgram = Logam_layer()(melgram)
-
-    Melgram_model = Model(input=x, output=melgram)
-    Melgram_model.summary(line_length=80)
-    return Melgram_model
 

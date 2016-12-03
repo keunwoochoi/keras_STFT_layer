@@ -2,10 +2,12 @@
 from __future__ import absolute_import
 import numpy as np
 import scipy.signal
+from keras.models import Sequential
 from keras.layers.convolutional import Convolution1D
 from keras.layers import Input, Lambda, merge, Permute, Reshape
 from keras.models import Model
 from keras import backend as K
+import pdb
 
 
 def _get_stft_kernels(n_dft, keras_ver='new'):
@@ -16,7 +18,7 @@ def _get_stft_kernels(n_dft, keras_ver='new'):
     Parameters
     ----------
     n_dft : int > 0 and power of 2 [scalar]
-        number of dft components.
+        Number of dft components.
 
     keras_ver : string, 'new' or 'old'
         It determines the reshaping strategy.
@@ -92,15 +94,19 @@ def Logam_layer(name='log_amplitude'):
         output_shape=logam_shape)
 
 
-def get_spectrogram_tensors(n_dft, input_shape, trainable=False, 
+def get_spectrogram_model(n_dft, input_shape, trainable=False, 
                             n_hop=None, border_mode='same', 
                             logamplitude=True):
     '''Returns two tensors, x as input, stft_magnitude as result.
         x(input) and STFT_magnitude(tensor) (#freq, #time shape)
+
+    It assumes mono input.
+    
     These tensors can be use to build a Keras model 
         using Functional API, 
         `e.g., model = keras.models.Model(x, STFT_magnitude)`
         to build a model that does STFT.
+    
     It uses two `Convolution1D` to compute real/imaginary parts of
         STFT and sum(real**2, imag**2). 
 
@@ -135,7 +141,8 @@ def get_spectrogram_tensors(n_dft, input_shape, trainable=False,
     -------
     x : input tensor
 
-    STFT_magnitude : STFT magnitude [shape=(None, n_freq, n_frame)]
+    STFT_magnitude : STFT magnitude, either in shape:
+        (None, 1, n_freq, n_frame) or (None, n_freq, n_frame, 1)
     '''
 
     assert trainable in (True, False)
@@ -177,10 +184,18 @@ def get_spectrogram_tensors(n_dft, input_shape, trainable=False,
     if logamplitude:
         STFT_magnitude = Logam_layer()(STFT_magnitude)
     
-    # output: (#sample, freq, time)
-    STFT_magnitude = Permute((2, 1))(STFT_magnitude) 
+    STFT_magnitude = Permute((2, 1))(STFT_magnitude)  # (sample, freq, time)
+    model_conv1d = Model(input=x, output=STFT_magnitude, name='stft_conv1d')
+    model_stft = Sequential(name='stft_model')
+    model_stft.add(model_conv1d)
+    
 
-    return x, STFT_magnitude
+    if K.image_dim_ordering() == 'th':
+        model_stft.add(Reshape((1, ) + model_conv1d.output_shape[1:]))
+    else:
+        model_stft.add(Reshape(model_conv1d.output_shape[1:] + (1, )))
+
+    return model_stft
 
 
 def Spectrogram(n_dft, input_shape, trainable=False, n_hop=None, 
@@ -194,12 +209,12 @@ def Spectrogram(n_dft, input_shape, trainable=False, n_hop=None,
 
     input_shape : tuple (length=2),
         Input shape of raw audio input.
-        It should (num_audio_samples, 1), e.g. (441000, 1)
+        It should (num_audio_samples, n_ch), e.g. (441000, 1), (16000, 2)
 
     trainable : boolean
         If it is `True`, the STFT kernels (=weights of two 1d conv layer)
         is set as `trainable`, therefore they are initiated with STFT 
-        kernels but then updated. 
+        kernels but then updated.
 
     n_hop : int > 0 [scalar]
         number of audio samples between successive frames.
@@ -212,14 +227,16 @@ def Spectrogram(n_dft, input_shape, trainable=False, n_hop=None,
 
     Returns
     -------
-    A keras model that has output shape of (None, n_freq, n_frame)
+    A keras model that has output shape of 
+        (None, n_ch, n_freq, n_frame) (if `img_dim_ordering() == 'th'`) or
+        (None, n_freq, n_frame, n_ch) (if `img_dim_ordering() == 'tf'`).
 
     '''
-    x, STFT_magnitude = get_spectrogram_tensors(n_dft, input_shape=input_shape,
-                                                trainable=trainable,
-                                                n_hop=n_hop, 
-                                                border_mode=border_mode,
-                                                logamplitude=logamplitude)
-    model = Model(input=x, output=STFT_magnitude)
+    model = get_spectrogram_model(n_dft, input_shape=input_shape,
+                                    trainable=trainable,
+                                    n_hop=n_hop, 
+                                    border_mode=border_mode,
+                                    logamplitude=logamplitude)
+
     model.trainable = trainable
     return model
