@@ -7,7 +7,6 @@ from keras.layers.convolutional import Convolution1D
 from keras.layers import Input, Lambda, merge, Permute, Reshape
 from keras.models import Model
 from keras import backend as K
-import pdb
 
 
 def _get_stft_kernels(n_dft, keras_ver='new'):
@@ -150,6 +149,7 @@ def get_spectrogram_model(n_dft, input_shape, trainable=False,
     if n_hop is None:
         n_hop = n_dft / 2
 
+    n_channel = input_shape[1]
     # get DFT kernels  
     dft_real_kernels, dft_imag_kernels = _get_stft_kernels(n_dft)
     nb_filter = n_dft / 2 + 1

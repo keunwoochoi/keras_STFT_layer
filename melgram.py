@@ -9,7 +9,6 @@ import numpy as np
 
 from stft import Spectrogram, get_spectrogram_model
 from stft import Logam_layer
-import pdb
 
 
 def _mel_frequencies(n_mels=128, fmin=0.0, fmax=11025.0):
@@ -183,7 +182,6 @@ def Melspectrogram(n_dft, input_shape, trainable, n_hop=None,
     # output: 2d shape, either (None, 1, freq, time) or..
     stft_model.trainable = trainable
     Melgram.add(stft_model)
-    pdb.set_trace()
 
     # build a Mel filter
     mel_basis = _mel(sr, n_dft, n_mels, fmin, fmax)  # (128, 1025) (mel_bin, n_freq)
