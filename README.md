@@ -1,8 +1,10 @@
+# Use kapre instead of this
+[**kapre**](https://github.com/keunwoochoi/kapre) includes faster STFT/Melspectrogram with multi-channel supports as well as some other stuffs, works with both `tensorflow` and `theano`. For all cases *kapre* is better.
+
 # keras_STFT_layer
 Do STFT & friends in Keras! For less hassle pre-processing
  * [x] STFT
  * [x] melgram
- * [ ] CQT
 
 ## why
 Because I am planning to compare the performance of some Convnets while changing parameters of STFT and storing all of them doesn't seem to make sense.
