@@ -1,15 +1,15 @@
 # Use kapre instead of this
 [**kapre**](https://github.com/keunwoochoi/kapre) includes faster STFT/Melspectrogram with multi-channel supports as well as some other stuffs, works with both `tensorflow` and `theano`. For all cases *kapre* is better.
 
-# keras_STFT_layer
+#### keras_STFT_layer
 Do STFT & friends in Keras! For less hassle pre-processing
  * [x] STFT
  * [x] melgram
 
-## why
+#### why
 Because I am planning to compare the performance of some Convnets while changing parameters of STFT and storing all of them doesn't seem to make sense.
 
-## how
+#### how
 
 **Theano** backend only. `image_dim_ordering()` doesn't matter. 
 
@@ -28,10 +28,10 @@ model.add(your_awesome_network)
 
 ```
 
-## More info
+#### More info
 * [Jypyter notebook (STFT)](https://github.com/keunwoochoi/keras_STFT_layer/blob/master/stft.ipynb)
 * [Jypyter notebook (STFT)](https://github.com/keunwoochoi/keras_STFT_layer/blob/master/melgram.ipynb)
 
-## Credits
+#### Credits
 
 I relied on [Librosa codes](http://librosa.github.io). 
